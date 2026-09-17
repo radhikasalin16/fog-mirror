@@ -1,0 +1,2562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Foggy Mirror</title>
+
+<script
+    src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"
+    crossorigin="anonymous">
+</script>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+:root {
+    --glass: rgba(12, 16, 22, 0.62);
+    --glass-strong: rgba(12, 16, 22, 0.82);
+    --line: rgba(255,255,255,0.14);
+    --text: #f5f7fa;
+    --muted: rgba(245,247,250,0.62);
+    --accent: #d9b77a;
+    --accent-2: #f1d9a7;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+
+    width: 100%;
+    height: 100%;
+
+    overflow: hidden;
+
+    background: #07090c;
+
+    font-family:
+        Inter,
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+
+    color: var(--text);
+}
+
+#stage {
+
+    position: fixed;
+
+    inset: 0;
+
+    width: 100vw;
+    height: 100vh;
+
+    overflow: hidden;
+
+    background: #080a0e;
+}
+
+
+/* =====================================================
+   MAIN CANVAS
+
+   IMPORTANT:
+   NO scaleX(-1) HERE.
+
+   The mirroring happens inside the canvas drawing code
+   so that the fog layer stays unmirrored.
+   ===================================================== */
+
+#output {
+
+    position: absolute;
+
+    inset: 0;
+
+    width: 100%;
+    height: 100%;
+
+    object-fit: cover;
+}
+
+
+/* =====================================================
+   SUBTLE FRAME
+   ===================================================== */
+
+#stage::before {
+
+    content: "";
+
+    position: absolute;
+
+    inset: 14px;
+
+    pointer-events: none;
+
+    border:
+        1px solid
+        rgba(255,255,255,0.12);
+
+    border-radius: 18px;
+
+    box-shadow:
+        inset
+        0 0 70px
+        rgba(0,0,0,0.52),
+
+        0 0 0 1px
+        rgba(0,0,0,0.4);
+
+    z-index: 10;
+}
+
+
+#stage::after {
+
+    content: "";
+
+    position: absolute;
+
+    inset: 0;
+
+    pointer-events: none;
+
+    background:
+
+        linear-gradient(
+            to bottom,
+            rgba(0,0,0,0.42),
+            transparent 24%,
+            transparent 70%,
+            rgba(0,0,0,0.55)
+        ),
+
+        radial-gradient(
+            ellipse at center,
+            transparent 42%,
+            rgba(0,0,0,0.36) 100%
+        );
+
+    z-index: 5;
+}
+
+
+/* =====================================================
+   TOP PANEL
+   ===================================================== */
+
+#topPanel {
+
+    position: absolute;
+
+    top: 34px;
+    left: 34px;
+
+    z-index: 20;
+
+    text-align: left;
+
+    color: white;
+
+    pointer-events: none;
+}
+
+
+#title {
+
+    font-size:
+        clamp(22px, 3vw, 34px);
+
+    letter-spacing:
+        0.22em;
+
+    margin-bottom: 7px;
+
+    font-weight: 500;
+
+    line-height: 1;
+}
+
+
+#status {
+
+    display: inline-flex;
+
+    align-items: center;
+
+    gap: 8px;
+
+    font-size: 12px;
+
+    color: var(--muted);
+
+    letter-spacing: 0.05em;
+}
+
+
+#status::before {
+
+    content: "";
+
+    width: 7px;
+    height: 7px;
+
+    border-radius: 50%;
+
+    background:
+        var(--accent);
+
+    box-shadow:
+        0 0 12px
+        rgba(217,183,122,0.7);
+}
+
+
+/* =====================================================
+   BREATH METER
+   ===================================================== */
+
+#meterContainer {
+
+    position: absolute;
+
+    top: 30px;
+    right: 32px;
+
+    width: 190px;
+
+    z-index: 20;
+
+    padding:
+        13px 15px;
+
+    color: white;
+
+    background:
+        var(--glass);
+
+    border:
+        1px solid
+        var(--line);
+
+    border-radius: 14px;
+
+    backdrop-filter:
+        blur(18px);
+
+    -webkit-backdrop-filter:
+        blur(18px);
+
+    box-shadow:
+        0 12px 35px
+        rgba(0,0,0,0.22);
+}
+
+
+#meterLabel {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    font-size: 11px;
+
+    margin-bottom: 8px;
+
+    color: var(--muted);
+
+    letter-spacing: 0.08em;
+
+    text-transform: uppercase;
+}
+
+
+#meterLabel::after {
+
+    content: "LIVE";
+
+    color: var(--accent-2);
+
+    font-size: 9px;
+
+    letter-spacing: 0.12em;
+}
+
+
+#meter {
+
+    width: 100%;
+
+    height: 5px;
+
+    background:
+        rgba(255,255,255,0.12);
+
+    border-radius: 99px;
+
+    overflow: hidden;
+}
+
+
+#meterFill {
+
+    width: 0%;
+
+    height: 100%;
+
+    background:
+        linear-gradient(
+            90deg,
+            #c8a46b,
+            #f2d7a4
+        );
+
+    box-shadow:
+        0 0 12px
+        rgba(217,183,122,0.55);
+
+    transition:
+        width 0.1s linear;
+}
+
+
+/* =====================================================
+   CONTROLS
+   ===================================================== */
+
+#controls {
+
+    position: absolute;
+
+    bottom: 30px;
+    left: 50%;
+
+    transform:
+        translateX(-50%);
+
+    z-index: 20;
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 18px;
+
+    min-width:
+        min(
+            520px,
+            calc(100% - 40px)
+        );
+
+    padding:
+        11px 12px 11px 17px;
+
+    background:
+        var(--glass-strong);
+
+    border:
+        1px solid
+        var(--line);
+
+    border-radius: 18px;
+
+    backdrop-filter:
+        blur(22px);
+
+    -webkit-backdrop-filter:
+        blur(22px);
+
+    box-shadow:
+        0 18px 55px
+        rgba(0,0,0,0.38);
+
+    color: white;
+}
+
+
+#thicknessControl {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 12px;
+
+    flex: 1;
+
+    font-size: 11px;
+
+    color: var(--muted);
+
+    text-transform: uppercase;
+
+    letter-spacing: 0.08em;
+
+    white-space: nowrap;
+}
+
+
+#thickness {
+
+    flex: 1;
+
+    min-width: 100px;
+
+    accent-color:
+        var(--accent);
+
+    cursor: pointer;
+}
+
+
+#startBtn {
+
+    border:
+        1px solid
+        rgba(255,255,255,0.12);
+
+    padding:
+        11px 19px;
+
+    border-radius: 12px;
+
+    background:
+        linear-gradient(
+            135deg,
+            #d6b374,
+            #a9844d
+        );
+
+    color: #15110a;
+
+    font-size: 12px;
+
+    font-weight: 700;
+
+    letter-spacing: 0.06em;
+
+    cursor: pointer;
+
+    transition:
+        transform 0.2s,
+        filter 0.2s;
+
+    white-space: nowrap;
+}
+
+
+#startBtn:hover {
+
+    filter:
+        brightness(1.08);
+
+    transform:
+        translateY(-1px);
+}
+
+
+/* =====================================================
+   HINT
+   ===================================================== */
+
+#hint {
+
+    position: absolute;
+
+    bottom: 105px;
+    left: 50%;
+
+    transform:
+        translateX(-50%);
+
+    z-index: 20;
+
+    color: white;
+
+    font-size: 11px;
+
+    letter-spacing: 0.12em;
+
+    text-transform: uppercase;
+
+    opacity: 0.66;
+
+    text-align: center;
+
+    text-shadow:
+        0 2px 8px black;
+
+    pointer-events: none;
+
+    white-space: nowrap;
+}
+
+
+/* =====================================================
+   START SCREEN
+   ===================================================== */
+
+#overlay {
+
+    position: absolute;
+
+    inset: 0;
+
+    z-index: 30;
+
+    display: flex;
+
+    align-items: center;
+    justify-content: center;
+
+    background:
+        rgba(4,6,9,0.76);
+
+    color: white;
+
+    text-align: center;
+
+    backdrop-filter:
+        blur(8px);
+
+    -webkit-backdrop-filter:
+        blur(8px);
+}
+
+
+#overlayBox {
+
+    position: relative;
+
+    width:
+        min(
+            430px,
+            calc(100% - 40px)
+        );
+
+    padding:
+        42px 38px 34px;
+
+    border-radius: 24px;
+
+    background:
+        rgba(13,17,23,0.78);
+
+    border:
+        1px solid
+        rgba(255,255,255,0.13);
+
+    box-shadow:
+        0 25px 90px
+        rgba(0,0,0,0.55);
+
+    backdrop-filter:
+        blur(24px);
+
+    -webkit-backdrop-filter:
+        blur(24px);
+}
+
+
+#overlayBox::before {
+
+    content: "";
+
+    display: block;
+
+    width: 42px;
+    height: 42px;
+
+    margin:
+        0 auto 22px;
+
+    border:
+        1px solid
+        rgba(217,183,122,0.7);
+
+    border-radius: 50%;
+
+    box-shadow:
+        inset
+        0 0 0 7px
+        rgba(217,183,122,0.07);
+}
+
+
+#overlayBox h2 {
+
+    margin:
+        0 0 14px;
+
+    font-size: 27px;
+
+    font-weight: 500;
+
+    letter-spacing:
+        0.2em;
+}
+
+
+#overlayBox p {
+
+    margin: 0;
+
+    color: var(--muted);
+
+    line-height: 1.75;
+
+    font-size: 13px;
+}
+
+
+#overlay button {
+
+    margin-top: 25px;
+
+    width: 100%;
+
+    padding:
+        13px 22px;
+
+    border:
+        1px solid
+        rgba(255,255,255,0.12);
+
+    border-radius: 12px;
+
+    background:
+        linear-gradient(
+            135deg,
+            #d6b374,
+            #a9844d
+        );
+
+    color: #15110a;
+
+    font-size: 12px;
+
+    font-weight: 700;
+
+    letter-spacing: 0.08em;
+
+    cursor: pointer;
+
+    transition:
+        filter 0.2s,
+        transform 0.2s;
+}
+
+
+#overlay button:hover {
+
+    filter:
+        brightness(1.08);
+
+    transform:
+        translateY(-1px);
+}
+
+
+#video {
+
+    display: none;
+}
+
+
+/* =====================================================
+   MOBILE
+   ===================================================== */
+
+@media (max-width: 600px) {
+
+    #stage::before {
+
+        inset: 8px;
+
+        border-radius: 12px;
+    }
+
+
+    #topPanel {
+
+        top: 24px;
+        left: 22px;
+    }
+
+
+    #title {
+
+        font-size: 20px;
+    }
+
+
+    #meterContainer {
+
+        top: 20px;
+        right: 20px;
+
+        width: 135px;
+
+        padding:
+            10px 12px;
+    }
+
+
+    #controls {
+
+        bottom: 18px;
+
+        width:
+            calc(100% - 28px);
+
+        min-width: 0;
+
+        gap: 12px;
+
+        padding: 10px;
+    }
+
+
+    #thicknessControl {
+
+        min-width: 0;
+    }
+
+
+    #hint {
+
+        bottom: 91px;
+
+        width: 90%;
+
+        white-space: normal;
+
+        line-height: 1.5;
+    }
+
+
+    #overlayBox {
+
+        padding:
+            34px 25px 28px;
+    }
+
+}
+
+</style>
+</head>
+
+
+<body>
+
+<div id="stage">
+
+    <video
+        id="video"
+        autoplay
+        playsinline
+        muted>
+    </video>
+
+
+    <canvas
+        id="output">
+    </canvas>
+
+
+    <div id="topPanel">
+
+        <div id="title">
+            FOGGY MIRROR
+        </div>
+
+        <div id="status">
+            Waiting for camera...
+        </div>
+
+    </div>
+
+
+    <div id="meterContainer">
+
+        <div id="meterLabel">
+            Breath
+        </div>
+
+        <div id="meter">
+
+            <div id="meterFill">
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <div id="hint">
+
+        Breathe on the mirror •
+        Raise one finger •
+        Write on the fog
+
+    </div>
+
+
+    <div id="controls">
+
+        <div id="thicknessControl">
+
+            <span>
+                Writing
+            </span>
+
+            <input
+                id="thickness"
+                type="range"
+                min="5"
+                max="100"
+                value="40">
+
+        </div>
+
+
+        <button id="startBtn">
+
+            Start Mirror
+
+        </button>
+
+    </div>
+
+
+    <div id="overlay">
+
+        <div id="overlayBox">
+
+            <h2>
+                FOGGY MIRROR
+            </h2>
+
+            <p>
+
+                Allow camera and microphone access.
+
+                <br><br>
+
+                Breathe toward the camera to create
+                condensation, then use your index
+                finger to write on the fog.
+
+            </p>
+
+
+            <button id="startOverlay">
+
+                Enter Mirror
+
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+/* =====================================================
+   ELEMENTS
+   ===================================================== */
+
+const video =
+    document.getElementById("video");
+
+const canvas =
+    document.getElementById("output");
+
+const ctx =
+    canvas.getContext("2d");
+
+const statusEl =
+    document.getElementById("status");
+
+const meterFill =
+    document.getElementById("meterFill");
+
+const thicknessSlider =
+    document.getElementById("thickness");
+
+const startBtn =
+    document.getElementById("startBtn");
+
+const startOverlay =
+    document.getElementById("startOverlay");
+
+const overlay =
+    document.getElementById("overlay");
+
+
+/* =====================================================
+   SCREEN SIZE
+   ===================================================== */
+
+let W =
+    window.innerWidth;
+
+let H =
+    window.innerHeight;
+
+
+canvas.width = W;
+canvas.height = H;
+
+
+/* =====================================================
+   FOG CANVAS
+
+   This layer lives in SCREEN space.
+   It is never mirrored.
+   ===================================================== */
+
+const fogCanvas =
+    document.createElement("canvas");
+
+const fogCtx =
+    fogCanvas.getContext("2d");
+
+fogCanvas.width = W;
+fogCanvas.height = H;
+
+
+/* =====================================================
+   TEXTURE CANVAS
+   ===================================================== */
+
+const textureCanvas =
+    document.createElement("canvas");
+
+const textureCtx =
+    textureCanvas.getContext("2d");
+
+textureCanvas.width = W;
+textureCanvas.height = H;
+
+
+function createFogTexture() {
+
+    textureCtx.clearRect(
+        0,
+        0,
+        W,
+        H
+    );
+
+
+    for (
+        let i = 0;
+        i < 450;
+        i++
+    ) {
+
+        const x =
+            Math.random() * W;
+
+        const y =
+            Math.random() * H;
+
+        const r =
+            2 +
+            Math.random() * 7;
+
+
+        const gradient =
+            textureCtx.createRadialGradient(
+                x,
+                y,
+                0,
+                x,
+                y,
+                r
+            );
+
+
+        gradient.addColorStop(
+            0,
+            "rgba(255,255,255,0.04)"
+        );
+
+
+        gradient.addColorStop(
+            1,
+            "rgba(255,255,255,0)"
+        );
+
+
+        textureCtx.fillStyle =
+            gradient;
+
+
+        textureCtx.beginPath();
+
+
+        textureCtx.arc(
+            x,
+            y,
+            r,
+            0,
+            Math.PI * 2
+        );
+
+
+        textureCtx.fill();
+
+    }
+
+}
+
+
+createFogTexture();
+
+
+/* =====================================================
+   VARIABLES
+   ===================================================== */
+
+let fingertip = null;
+
+let previousTip = null;
+
+let smoothTip = null;
+
+let breathLevel = 0;
+
+let writingThickness =
+    Number(
+        thicknessSlider.value
+    );
+
+
+/* =====================================================
+   TRACKING SETTINGS
+   ===================================================== */
+
+const MOVEMENT_THRESHOLD =
+    1.2;
+
+const MAX_JUMP =
+    120;
+
+const SMOOTHING =
+    0.34;
+
+
+/* =====================================================
+   CAMERA DISPLAY INFORMATION
+
+   MediaPipe gives coordinates based on the ORIGINAL
+   camera frame.
+
+   The camera is displayed using COVER, so the hand
+   coordinate must go through the exact same crop
+   calculation, PLUS the horizontal mirror.
+   ===================================================== */
+
+function getCameraLayout() {
+
+    if (
+        !video.videoWidth ||
+        !video.videoHeight
+    ) {
+
+        return null;
+
+    }
+
+
+    const videoRatio =
+        video.videoWidth /
+        video.videoHeight;
+
+
+    const screenRatio =
+        W / H;
+
+
+    let drawWidth;
+    let drawHeight;
+
+    let offsetX = 0;
+    let offsetY = 0;
+
+
+    if (
+        videoRatio >
+        screenRatio
+    ) {
+
+        /*
+            Video is wider than screen.
+
+            Height fits.
+            Sides are cropped.
+        */
+
+        drawHeight = H;
+
+        drawWidth =
+            H * videoRatio;
+
+        offsetX =
+            (W - drawWidth) / 2;
+
+    }
+
+    else {
+
+        /*
+            Video is taller than screen.
+
+            Width fits.
+            Top/bottom are cropped.
+        */
+
+        drawWidth = W;
+
+        drawHeight =
+            W / videoRatio;
+
+        offsetY =
+            (H - drawHeight) / 2;
+
+    }
+
+
+    return {
+
+        drawWidth,
+        drawHeight,
+        offsetX,
+        offsetY
+
+    };
+
+}
+
+
+/* =====================================================
+   CONVERT MEDIAPIPE COORDINATES
+
+   MIRROR FIX (1 of 2)
+
+   The displayed video is flipped horizontally, so a
+   landmark at x = 0.2 in the source frame appears at
+   0.8 on screen. We invert x here to match.
+   ===================================================== */
+
+function handToScreen(
+    normalizedX,
+    normalizedY
+) {
+
+    const layout =
+        getCameraLayout();
+
+
+    if (!layout) {
+
+        return {
+
+            x: (1 - normalizedX) * W,
+
+            y: normalizedY * H
+
+        };
+
+    }
+
+
+    const cameraX =
+        (1 - normalizedX) *
+        layout.drawWidth;
+
+
+    const cameraY =
+        normalizedY *
+        layout.drawHeight;
+
+
+    /*
+        Apply exactly the same crop
+        that the displayed camera uses.
+
+        Because the image is mirrored, the
+        horizontal offset is measured from
+        the opposite edge.
+    */
+
+    const mirroredOffsetX =
+        W -
+        layout.offsetX -
+        layout.drawWidth;
+
+
+    const screenX =
+        mirroredOffsetX +
+        cameraX;
+
+
+    const screenY =
+        layout.offsetY +
+        cameraY;
+
+
+    return {
+
+        x: screenX,
+
+        y: screenY
+
+    };
+
+}
+
+
+/* =====================================================
+   RESIZE
+   ===================================================== */
+
+function resizeCanvases() {
+
+    W =
+        window.innerWidth;
+
+    H =
+        window.innerHeight;
+
+
+    canvas.width = W;
+    canvas.height = H;
+
+
+    fogCanvas.width = W;
+    fogCanvas.height = H;
+
+
+    textureCanvas.width = W;
+    textureCanvas.height = H;
+
+
+    createFogTexture();
+
+
+    /*
+        Reset tracking because the coordinate
+        system has changed.
+    */
+
+    fingertip = null;
+
+    previousTip = null;
+
+    smoothTip = null;
+
+}
+
+
+let resizePending = false;
+
+
+window.addEventListener(
+    "resize",
+    () => {
+
+        if (resizePending)
+            return;
+
+
+        resizePending = true;
+
+
+        requestAnimationFrame(
+            () => {
+
+                resizePending = false;
+
+                resizeCanvases();
+
+            }
+        );
+
+    }
+);
+
+
+/* =====================================================
+   START
+   ===================================================== */
+
+async function start() {
+
+    try {
+
+        statusEl.textContent =
+            "Requesting camera...";
+
+
+        const stream =
+            await navigator.mediaDevices
+                .getUserMedia({
+
+                    video: {
+
+                        facingMode: "user",
+
+                        width: {
+                            ideal: 640,
+                            max: 640
+                        },
+
+                        height: {
+                            ideal: 480,
+                            max: 480
+                        },
+
+                        frameRate: {
+                            ideal: 30,
+                            max: 30
+                        }
+
+                    },
+
+                    audio: true
+
+                });
+
+
+        video.srcObject =
+            stream;
+
+
+        await video.play();
+
+
+        /*
+            Wait until the actual camera dimensions
+            are available.
+        */
+
+        await new Promise(
+            resolve => {
+
+                if (
+                    video.videoWidth &&
+                    video.videoHeight
+                ) {
+
+                    resolve();
+
+                }
+
+                else {
+
+                    video.addEventListener(
+                        "loadedmetadata",
+                        resolve,
+                        {
+                            once: true
+                        }
+                    );
+
+                }
+
+            }
+        );
+
+
+        setupAudio();
+
+        setupHands();
+
+
+        overlay.style.display =
+            "none";
+
+
+        statusEl.textContent =
+            "Mirror ready";
+
+
+        requestAnimationFrame(
+            loop
+        );
+
+    }
+
+    catch (error) {
+
+        console.error(error);
+
+
+        statusEl.textContent =
+            "Camera / microphone permission required";
+
+    }
+
+}
+
+
+/* =====================================================
+   MICROPHONE
+   ===================================================== */
+
+function setupAudio() {
+
+    const audioTracks =
+        video.srcObject
+            ? video.srcObject
+                .getAudioTracks()
+            : [];
+
+
+    if (
+        !audioTracks.length
+    ) {
+
+        console.warn(
+            "No microphone track available."
+        );
+
+        return;
+
+    }
+
+
+    const AudioContextClass =
+        window.AudioContext ||
+        window.webkitAudioContext;
+
+
+    const audioContext =
+        new AudioContextClass();
+
+
+    const analyser =
+        audioContext.createAnalyser();
+
+
+    analyser.fftSize =
+        256;
+
+
+    analyser.smoothingTimeConstant =
+        0.65;
+
+
+    const source =
+        audioContext
+            .createMediaStreamSource(
+                video.srcObject
+            );
+
+
+    source.connect(
+        analyser
+    );
+
+
+    const data =
+        new Uint8Array(
+            analyser.fftSize
+        );
+
+
+    function analyzeBreath() {
+
+        analyser.getByteTimeDomainData(
+            data
+        );
+
+
+        let sum = 0;
+
+
+        for (
+            let i = 0;
+            i < data.length;
+            i++
+        ) {
+
+            const value =
+                (
+                    data[i] -
+                    128
+                ) / 128;
+
+
+            sum +=
+                value * value;
+
+        }
+
+
+        const rms =
+            Math.sqrt(
+                sum /
+                data.length
+            );
+
+
+        breathLevel =
+            Math.min(
+                1,
+                rms * 8
+            );
+
+
+        meterFill.style.width =
+            (
+                breathLevel *
+                100
+            ) + "%";
+
+
+        requestAnimationFrame(
+            analyzeBreath
+        );
+
+    }
+
+
+    if (
+        audioContext.state ===
+        "suspended"
+    ) {
+
+        audioContext.resume();
+
+    }
+
+
+    analyzeBreath();
+
+}
+
+
+/* =====================================================
+   HAND TRACKING
+   ===================================================== */
+
+function setupHands() {
+
+    const hands =
+        new Hands({
+
+            locateFile:
+                file => {
+
+                    return (
+                        "https://cdn.jsdelivr.net/npm/" +
+                        "@mediapipe/hands/" +
+                        file
+                    );
+
+                }
+
+        });
+
+
+    hands.setOptions({
+
+        maxNumHands: 1,
+
+        modelComplexity: 1,
+
+        minDetectionConfidence:
+            0.68,
+
+        minTrackingConfidence:
+            0.68
+
+    });
+
+
+    let lastGoodTip = null;
+
+    let lostFrames = 0;
+
+
+    const MAX_LOST_FRAMES =
+        8;
+
+
+    const MAX_RAW_JUMP =
+        140;
+
+
+    function distance(a, b) {
+
+        const dx =
+            a.x - b.x;
+
+        const dy =
+            a.y - b.y;
+
+
+        return Math.hypot(
+            dx,
+            dy
+        );
+
+    }
+
+
+    function angle(
+        a,
+        b,
+        c
+    ) {
+
+        const abx =
+            a.x - b.x;
+
+        const aby =
+            a.y - b.y;
+
+        const cbx =
+            c.x - b.x;
+
+        const cby =
+            c.y - b.y;
+
+
+        const magAB =
+            Math.hypot(
+                abx,
+                aby
+            );
+
+
+        const magCB =
+            Math.hypot(
+                cbx,
+                cby
+            );
+
+
+        if (
+            !magAB ||
+            !magCB
+        )
+            return 0;
+
+
+        const cosine =
+            (
+                abx * cbx +
+                aby * cby
+            ) /
+            (
+                magAB *
+                magCB
+            );
+
+
+        return Math.acos(
+            Math.max(
+                -1,
+                Math.min(
+                    1,
+                    cosine
+                )
+            )
+        ) *
+        180 /
+        Math.PI;
+
+    }
+
+
+    function fingerIsExtended(
+        lm,
+        mcp,
+        pip,
+        dip,
+        tip
+    ) {
+
+        const pipAngle =
+            angle(
+                lm[mcp],
+                lm[pip],
+                lm[dip]
+            );
+
+
+        const dipAngle =
+            angle(
+                lm[pip],
+                lm[dip],
+                lm[tip]
+            );
+
+
+        const wristToTip =
+            distance(
+                lm[0],
+                lm[tip]
+            );
+
+
+        const wristToMcp =
+            distance(
+                lm[0],
+                lm[mcp]
+            );
+
+
+        return (
+
+            pipAngle > 155 &&
+
+            dipAngle > 145 &&
+
+            wristToTip >
+                wristToMcp * 1.28
+
+        );
+
+    }
+
+
+    function thumbIsExtended(lm) {
+
+        const thumbAngle =
+            angle(
+                lm[2],
+                lm[3],
+                lm[4]
+            );
+
+
+        const thumbTipToIndexMcp =
+            distance(
+                lm[4],
+                lm[5]
+            );
+
+
+        return (
+
+            thumbAngle > 145 &&
+
+            thumbTipToIndexMcp >
+                0.16
+
+        );
+
+    }
+
+
+    function resetTracking() {
+
+        fingertip = null;
+
+        previousTip = null;
+
+        smoothTip = null;
+
+        lastGoodTip = null;
+
+    }
+
+
+    hands.onResults(
+        results => {
+
+            if (
+
+                !results.multiHandLandmarks ||
+
+                results.multiHandLandmarks
+                    .length === 0
+
+            ) {
+
+                lostFrames++;
+
+
+                if (
+                    lostFrames >
+                    MAX_LOST_FRAMES
+                ) {
+
+                    resetTracking();
+
+                }
+
+
+                return;
+
+            }
+
+
+            const landmarks =
+                results
+                    .multiHandLandmarks[0];
+
+
+            const indexExtended =
+                fingerIsExtended(
+                    landmarks,
+                    5,
+                    6,
+                    7,
+                    8
+                );
+
+
+            const middleExtended =
+                fingerIsExtended(
+                    landmarks,
+                    9,
+                    10,
+                    11,
+                    12
+                );
+
+
+            const ringExtended =
+                fingerIsExtended(
+                    landmarks,
+                    13,
+                    14,
+                    15,
+                    16
+                );
+
+
+            const pinkyExtended =
+                fingerIsExtended(
+                    landmarks,
+                    17,
+                    18,
+                    19,
+                    20
+                );
+
+
+            const thumbExtended =
+                thumbIsExtended(
+                    landmarks
+                );
+
+
+            const extendedFingers =
+
+                Number(indexExtended) +
+
+                Number(middleExtended) +
+
+                Number(ringExtended) +
+
+                Number(pinkyExtended) +
+
+                Number(thumbExtended);
+
+
+            const writingGesture =
+
+                indexExtended &&
+
+                extendedFingers === 1;
+
+
+            if (
+                !writingGesture
+            ) {
+
+                fingertip = null;
+
+                previousTip = null;
+
+                smoothTip = null;
+
+                lastGoodTip = null;
+
+                lostFrames = 0;
+
+                return;
+
+            }
+
+
+            /*
+                handToScreen applies both the cover
+                crop and the horizontal mirror, so the
+                fingertip lands exactly where the hand
+                appears on screen.
+            */
+
+            const target =
+                handToScreen(
+                    landmarks[8].x,
+                    landmarks[8].y
+                );
+
+
+            /*
+                Reject huge tracking jumps.
+            */
+
+            if (
+
+                lastGoodTip &&
+
+                Math.hypot(
+
+                    target.x -
+                    lastGoodTip.x,
+
+                    target.y -
+                    lastGoodTip.y
+
+                ) > MAX_RAW_JUMP
+
+            ) {
+
+                return;
+
+            }
+
+
+            lastGoodTip =
+                target;
+
+
+            lostFrames = 0;
+
+
+            /*
+                Adaptive smoothing.
+            */
+
+            if (!smoothTip) {
+
+                smoothTip = {
+                    ...target
+                };
+
+            }
+
+            else {
+
+                const movement =
+                    Math.hypot(
+
+                        target.x -
+                        smoothTip.x,
+
+                        target.y -
+                        smoothTip.y
+
+                    );
+
+
+                const adaptiveSmoothing =
+
+                    movement > 35
+                        ? 0.58
+
+                        : movement > 15
+                            ? 0.46
+
+                            : 0.34;
+
+
+                smoothTip.x +=
+
+                    (
+                        target.x -
+                        smoothTip.x
+                    ) *
+                    adaptiveSmoothing;
+
+
+                smoothTip.y +=
+
+                    (
+                        target.y -
+                        smoothTip.y
+                    ) *
+                    adaptiveSmoothing;
+
+            }
+
+
+            fingertip = {
+
+                x:
+                    smoothTip.x,
+
+                y:
+                    smoothTip.y
+
+            };
+
+        }
+    );
+
+
+    /*
+        Run hand tracking around 20 FPS.
+    */
+
+    let handBusy = false;
+
+    let lastHandProcess = 0;
+
+
+    async function detectHands(
+        now = performance.now()
+    ) {
+
+        const HAND_INTERVAL =
+            50;
+
+
+        if (
+
+            video.readyState >= 2 &&
+
+            !handBusy &&
+
+            now -
+            lastHandProcess >=
+            HAND_INTERVAL
+
+        ) {
+
+            handBusy = true;
+
+            lastHandProcess =
+                now;
+
+
+            try {
+
+                await hands.send({
+
+                    image: video
+
+                });
+
+            }
+
+            catch (error) {
+
+                console.warn(
+                    "Hand tracking frame error:",
+                    error
+                );
+
+            }
+
+            finally {
+
+                handBusy = false;
+
+            }
+
+        }
+
+
+        requestAnimationFrame(
+            detectHands
+        );
+
+    }
+
+
+    requestAnimationFrame(
+        detectHands
+    );
+
+}
+
+
+/* =====================================================
+   ADD FOG
+   ===================================================== */
+
+function addFog(amount) {
+
+    fogCtx.save();
+
+
+    fogCtx.globalCompositeOperation =
+        "source-over";
+
+
+    fogCtx.fillStyle =
+        `rgba(
+            235,
+            238,
+            235,
+            ${amount * 0.12}
+        )`;
+
+
+    fogCtx.fillRect(
+        0,
+        0,
+        W,
+        H
+    );
+
+
+    fogCtx.globalAlpha =
+        amount * 0.35;
+
+
+    fogCtx.drawImage(
+        textureCanvas,
+        0,
+        0
+    );
+
+
+    fogCtx.restore();
+
+}
+
+
+/* =====================================================
+   ERASE FOG
+   ===================================================== */
+
+function eraseFog(
+    x,
+    y,
+    radius
+) {
+
+    fogCtx.save();
+
+
+    fogCtx.globalCompositeOperation =
+        "destination-out";
+
+
+    const gradient =
+        fogCtx.createRadialGradient(
+
+            x,
+            y,
+            0,
+
+            x,
+            y,
+            radius
+
+        );
+
+
+    gradient.addColorStop(
+        0,
+        "rgba(0,0,0,1)"
+    );
+
+
+    gradient.addColorStop(
+        0.45,
+        "rgba(0,0,0,0.85)"
+    );
+
+
+    gradient.addColorStop(
+        0.75,
+        "rgba(0,0,0,0.35)"
+    );
+
+
+    gradient.addColorStop(
+        1,
+        "rgba(0,0,0,0)"
+    );
+
+
+    fogCtx.fillStyle =
+        gradient;
+
+
+    fogCtx.beginPath();
+
+
+    fogCtx.arc(
+
+        x,
+        y,
+        radius,
+        0,
+        Math.PI * 2
+
+    );
+
+
+    fogCtx.fill();
+
+
+    fogCtx.restore();
+
+}
+
+
+/* =====================================================
+   SMOOTH WRITING
+   ===================================================== */
+
+function drawSmoothStroke(
+    target
+) {
+
+    if (!target)
+        return;
+
+
+    if (!previousTip) {
+
+        previousTip = {
+
+            x: target.x,
+
+            y: target.y
+
+        };
+
+        return;
+
+    }
+
+
+    const dx =
+        target.x -
+        previousTip.x;
+
+
+    const dy =
+        target.y -
+        previousTip.y;
+
+
+    const distance =
+        Math.sqrt(
+
+            dx * dx +
+            dy * dy
+
+        );
+
+
+    if (
+        distance <
+        MOVEMENT_THRESHOLD
+    ) {
+
+        return;
+
+    }
+
+
+    if (
+        distance >
+        MAX_JUMP
+    ) {
+
+        previousTip = {
+
+            x: target.x,
+
+            y: target.y
+
+        };
+
+        return;
+
+    }
+
+
+    const steps =
+        Math.max(
+            1,
+            Math.ceil(
+                distance / 3
+            )
+        );
+
+
+    for (
+        let i = 0;
+        i <= steps;
+        i++
+    ) {
+
+        const t =
+            i / steps;
+
+
+        const x =
+            previousTip.x +
+            dx * t;
+
+
+        const y =
+            previousTip.y +
+            dy * t;
+
+
+        eraseFog(
+
+            x,
+            y,
+            writingThickness
+
+        );
+
+    }
+
+
+    previousTip = {
+
+        x: target.x,
+
+        y: target.y
+
+    };
+
+}
+
+
+/* =====================================================
+   MAIN LOOP
+   ===================================================== */
+
+function loop() {
+
+    ctx.clearRect(
+        0,
+        0,
+        W,
+        H
+    );
+
+
+    /* =================================================
+       CAMERA
+
+       MIRROR FIX (2 of 2)
+
+       The video is drawn flipped horizontally so the
+       feed behaves like a real mirror.
+
+       Only the video is flipped. The fog layer, the
+       vignette and the DOM overlays stay in normal
+       screen space.
+       ================================================= */
+
+    if (
+        video.readyState >= 2
+    ) {
+
+        const layout =
+            getCameraLayout();
+
+
+        if (layout) {
+
+            ctx.save();
+
+
+            ctx.translate(W, 0);
+
+            ctx.scale(-1, 1);
+
+
+            ctx.drawImage(
+
+                video,
+
+                W -
+                layout.offsetX -
+                layout.drawWidth,
+
+                layout.offsetY,
+
+                layout.drawWidth,
+
+                layout.drawHeight
+
+            );
+
+
+            ctx.restore();
+
+        }
+
+    }
+
+
+    /* =================================================
+       BREATH → FOG
+       ================================================= */
+
+    if (
+        breathLevel > 0.10
+    ) {
+
+        addFog(
+            breathLevel
+        );
+
+
+        statusEl.textContent =
+            "condensation…";
+
+    }
+
+    else if (
+        breathLevel > 0.04
+    ) {
+
+        addFog(
+            breathLevel * 0.25
+        );
+
+    }
+
+
+    /* =================================================
+       WRITE
+       ================================================= */
+
+    if (fingertip) {
+
+        drawSmoothStroke(
+            fingertip
+        );
+
+
+        statusEl.textContent =
+            "writing…";
+
+    }
+
+
+    /* =================================================
+       FOG OVER CAMERA
+       ================================================= */
+
+    ctx.drawImage(
+        fogCanvas,
+        0,
+        0
+    );
+
+
+    /* =================================================
+       VIGNETTE
+       ================================================= */
+
+    const vignette =
+        ctx.createRadialGradient(
+
+            W / 2,
+            H / 2,
+
+            Math.min(W,H) * 0.25,
+
+            W / 2,
+            H / 2,
+
+            Math.max(W,H) * 0.75
+
+        );
+
+
+    vignette.addColorStop(
+        0,
+        "rgba(0,0,0,0)"
+    );
+
+
+    vignette.addColorStop(
+        1,
+        "rgba(0,0,0,0.35)"
+    );
+
+
+    ctx.fillStyle =
+        vignette;
+
+
+    ctx.fillRect(
+        0,
+        0,
+        W,
+        H
+    );
+
+
+    requestAnimationFrame(
+        loop
+    );
+
+}
+
+
+/* =====================================================
+   THICKNESS SLIDER
+   ===================================================== */
+
+thicknessSlider.addEventListener(
+    "input",
+    () => {
+
+        writingThickness =
+            Number(
+                thicknessSlider.value
+            );
+
+    }
+);
+
+
+/* =====================================================
+   BUTTONS
+   ===================================================== */
+
+startBtn.addEventListener(
+    "click",
+    start
+);
+
+
+startOverlay.addEventListener(
+    "click",
+    start
+);
+
+</script>
+
+</body>
+</html>
