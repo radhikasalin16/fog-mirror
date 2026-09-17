@@ -68,12 +68,6 @@ body {
 
 /* =====================================================
    MAIN CANVAS
-
-   IMPORTANT:
-   NO scaleX(-1) HERE.
-
-   The mirroring happens inside the canvas drawing code
-   so that the fog layer stays unmirrored.
    ===================================================== */
 
 #output {
@@ -924,9 +918,6 @@ canvas.height = H;
 
 /* =====================================================
    FOG CANVAS
-
-   This layer lives in SCREEN space.
-   It is never mirrored.
    ===================================================== */
 
 const fogCanvas =
@@ -1063,13 +1054,6 @@ const SMOOTHING =
 
 /* =====================================================
    CAMERA DISPLAY INFORMATION
-
-   MediaPipe gives coordinates based on the ORIGINAL
-   camera frame.
-
-   The camera is displayed using COVER, so the hand
-   coordinate must go through the exact same crop
-   calculation, PLUS the horizontal mirror.
    ===================================================== */
 
 function getCameraLayout() {
@@ -1105,13 +1089,6 @@ function getCameraLayout() {
         screenRatio
     ) {
 
-        /*
-            Video is wider than screen.
-
-            Height fits.
-            Sides are cropped.
-        */
-
         drawHeight = H;
 
         drawWidth =
@@ -1123,13 +1100,6 @@ function getCameraLayout() {
     }
 
     else {
-
-        /*
-            Video is taller than screen.
-
-            Width fits.
-            Top/bottom are cropped.
-        */
 
         drawWidth = W;
 
@@ -1156,12 +1126,6 @@ function getCameraLayout() {
 
 /* =====================================================
    CONVERT MEDIAPIPE COORDINATES
-
-   MIRROR FIX (1 of 2)
-
-   The displayed video is flipped horizontally, so a
-   landmark at x = 0.2 in the source frame appears at
-   0.8 on screen. We invert x here to match.
    ===================================================== */
 
 function handToScreen(
@@ -1195,15 +1159,6 @@ function handToScreen(
         normalizedY *
         layout.drawHeight;
 
-
-    /*
-        Apply exactly the same crop
-        that the displayed camera uses.
-
-        Because the image is mirrored, the
-        horizontal offset is measured from
-        the opposite edge.
-    */
 
     const mirroredOffsetX =
         W -
@@ -1259,11 +1214,6 @@ function resizeCanvases() {
 
     createFogTexture();
 
-
-    /*
-        Reset tracking because the coordinate
-        system has changed.
-    */
 
     fingertip = null;
 
@@ -1350,11 +1300,6 @@ async function start() {
 
         await video.play();
 
-
-        /*
-            Wait until the actual camera dimensions
-            are available.
-        */
 
         await new Promise(
             resolve => {
@@ -1517,11 +1462,24 @@ function setupAudio() {
             );
 
 
-        breathLevel =
+        /*
+            Smooth the breath signal slightly.
+            This prevents tiny microphone noise
+            from instantly creating fog.
+        */
+
+        const detectedBreath =
             Math.min(
                 1,
                 rms * 8
             );
+
+
+        breathLevel +=
+            (
+                detectedBreath -
+                breathLevel
+            ) * 0.12;
 
 
         meterFill.style.width =
@@ -1901,23 +1859,12 @@ function setupHands() {
             }
 
 
-            /*
-                handToScreen applies both the cover
-                crop and the horizontal mirror, so the
-                fingertip lands exactly where the hand
-                appears on screen.
-            */
-
             const target =
                 handToScreen(
                     landmarks[8].x,
                     landmarks[8].y
                 );
 
-
-            /*
-                Reject huge tracking jumps.
-            */
 
             if (
 
@@ -1946,10 +1893,6 @@ function setupHands() {
 
             lostFrames = 0;
 
-
-            /*
-                Adaptive smoothing.
-            */
 
             if (!smoothTip) {
 
@@ -2017,10 +1960,6 @@ function setupHands() {
         }
     );
 
-
-    /*
-        Run hand tracking around 20 FPS.
-    */
 
     let handBusy = false;
 
@@ -2096,7 +2035,7 @@ function setupHands() {
 
 
 /* =====================================================
-   ADD FOG
+   ADD FOG — SLOW AND GENTLE
    ===================================================== */
 
 function addFog(amount) {
@@ -2113,7 +2052,7 @@ function addFog(amount) {
             235,
             238,
             235,
-            ${amount * 0.12}
+            ${amount}
         )`;
 
 
@@ -2125,8 +2064,15 @@ function addFog(amount) {
     );
 
 
+    /*
+        Very subtle texture.
+
+        Keeping this low prevents the fog
+        from becoming opaque too quickly.
+    */
+
     fogCtx.globalAlpha =
-        amount * 0.35;
+        amount * 1.4;
 
 
     fogCtx.drawImage(
@@ -2363,15 +2309,6 @@ function loop() {
 
     /* =================================================
        CAMERA
-
-       MIRROR FIX (2 of 2)
-
-       The video is drawn flipped horizontally so the
-       feed behaves like a real mirror.
-
-       Only the video is flipped. The fog layer, the
-       vignette and the DOM overlays stay in normal
-       screen space.
        ================================================= */
 
     if (
@@ -2417,15 +2354,23 @@ function loop() {
 
 
     /* =================================================
-       BREATH → FOG
+       BREATH → SLOW FOG
        ================================================= */
 
     if (
         breathLevel > 0.10
     ) {
 
+        /*
+            Very slow condensation.
+
+            The old code added a large amount
+            every frame. This version adds only
+            a tiny amount per frame.
+        */
+
         addFog(
-            breathLevel
+            breathLevel * 0.004
         );
 
 
@@ -2438,8 +2383,13 @@ function loop() {
         breathLevel > 0.04
     ) {
 
+        /*
+            Very faint condensation from
+            quieter breathing.
+        */
+
         addFog(
-            breathLevel * 0.25
+            breathLevel * 0.001
         );
 
     }
